@@ -1,0 +1,339 @@
+---
+title: "Assignment 2"
+author: "Prayash Pathak"
+format: pdf
+editor: visual
+---
+
+## Assignment 2
+
+## Question 1: t-tests
+
+Run the following code:
+
+```{r}
+set.seed(846589)
+mfdf <- data.frame(y = rnorm(1000, mean = 3.141592, sd = 2),
+female = sample(0:1, 1000, replace = TRUE, prob = c(0.48,0.52)))
+```
+
+1.  Explain in words what is going on with the sample function. (Look it up and experiment to figure it out.)
+
+```{r}
+?sample()
+```
+
+sample(x, size, replace = FALSE, prob = NULL)
+
+Looking at the arguments, the sample function is creating a random sample of size 1000 with values from the set{0,1} with replacement, and the probabilities associated with each value being selected equal to 0.48 for 0 and 0.52 for 1.
+
+2.  Use the t.test function to test the null hypothesis that the mean of y for men is the same as the mean for women. Use var.equal=TRUE. (If you don't remember what equal variances means in this context, try to figure out at the end after comparing with the regression.)
+
+```{r}
+#using the t.test function by setting var.equal=TRUE, this assumes equal variance between the two groups (men and women).
+
+test1 <- t.test(y ~ female, data = mfdf, var.equal = TRUE)
+```
+
+3.  (nothing to write) Look at the components of test1 and compare with the Value section of the help page.
+
+```{r}
+
+```
+
+4.  Extract the statistic, stderr, and p.value elements of test1.
+
+```{r}
+#extracting the required stats from test1
+statistic <- test1$statistic
+print(statistic)
+stderr <- test1$stderr
+print(stderr)
+p_value <- test1$p.value
+print(p_value)
+```
+
+At an alpha of 0.05, we see a comparatively higher p-value. So, we fail to reject the null hypothesis and conclude there is not enough evidence to suggest the means are significantly different between the two groups.
+
+5.  Now regress y on female and save the result as reg1. Save summary(lm(reg1)) object as reg1sum.
+
+```{r}
+#regression of y on female
+
+reg1 <- lm(y ~ female, data = mfdf)
+reg1sum <- summary(reg1)
+```
+
+6.  Extract the coefficients component of reg1sum. The standard error, t-statistic, and p-value should match up with the results extracted from test1. (What does this have to do with the fact that summary calculates standard errors that assume homoskedasticity?)
+
+```{r}
+#extracting coefficients from reg1sum
+
+coefficients_reg1 <- coef(reg1sum)
+```
+
+7.  (nothing to write) If, in an econometrics course, you learned how heteroskedasticity-robust standard errors are calculated, it's worth thinking about why, when you run t.test with var.equal=FALSE, you don't get exactly the same standard error as if you use the sandwich package to calculate heteroskedasticity-robust standard errors for the regression.
+
+```{r}
+
+```
+
+## Question 2: Function and loop practice
+
+1.Write a function, se( ), that takes a numeric vector as its argument and returns the standard error of the mean of the vector.
+
+```{r}
+#Assuming that the vector should have at least two components, 
+se <- function(x){
+  if (length(x) < 2){
+    stop("The vector should have atleast two elements")
+  }
+  sem <- sd(x)/sqrt(length(x))
+  return(sem)
+}
+#Checking for (1,2)
+a <- c(1,2)
+se(a)
+```
+
+2.  Loop practice
+3.  Make a vector, sizes, of hypothetical sample sizes ranging from 100 to 10,000, incrementing by 100 (i.e., 100 values).
+
+```{r}
+#creating vector sizes by seq function
+sizes <- seq(100, 10000, by = 100)
+```
+
+2.Make a vector, seVals, all NA, to store 100 values.
+
+```{r}
+#Tried using vector command but did not take NA as x, so used rep().
+sevals <- rep(NA, 100)
+```
+
+3.  Write a loop over j from 1 to 100 that does the following: 3.1. Use the rnorm function to generate a sample of size sizes\[j\]. 3.2. Use your function to calculate the standard error of the sample mean of sample j. 3.3. Store the standard error in seVals.
+
+```{r}
+#creating for loop over
+for (j in 1:100){
+  sample <- rnorm(sizes[j], 0, 1)
+  se <- sd(sample) / sqrt(sizes[j])
+  sevals[j] <- se
+}
+```
+
+4.  To conclude, look at the relationship with plot(sizes, seVals). Does the plot make sense?
+
+```{r}
+#plotting sizes and sevals 
+plot(sizes, sevals,
+     xlab = "Sample size",
+     ylab = "Standard erorr",
+     main = "Relationship between sample size and standard erorr")
+```
+
+The plot does make sense as with increase in sample size the standard error decreases.
+
+3.  Now make a function using sapply that does the tasks in #2, but for an arbitrary vector of sample sizes. In other words, you should be able to say something like SEs \<- findSEs(x) where x is any vector of (positive) integers. Be sure to create a text vector x.
+
+```{r}
+#the function is named findSEs which takes any vector of sample sizes as input
+findSEs <- function(sample_size){
+  seVals <- sapply(sample_size, function(n) {
+    sample_data <- rnorm(n)
+    se <- sd(sample_data)/sqrt(n)
+    return(se)
+  })
+  return(seVals)
+}
+
+#running test
+x <- c(3,5,7,8,11)
+SEs <- findSEs(x)
+print(SEs)
+```
+
+## Question 3: Descriptive statistics
+
+This question will use the same World Bank Development Indicators (WDI) on Infrastructure: Transportation data that were used in Assignment 1. As a reminder, these data are located in the APEC 8221 - Course Data folder on Google Drive within the WDI_Transport.csv file. You should have already copied this file to your own data folder.
+
+1.  Read WDI_Transport.csv into R
+
+```{r}
+#loading required libraries
+library(rio)
+library("data.table")
+
+#importing the given data set as data table with name WDI
+WDI <- import(file="../data/WDI_Transport.csv", setclass = "data.table") 
+```
+
+2.  Choose a naming convention that you like (e.g., alllowercase, period.separated, underscore_separated, hyphen-separated, lowerCamelCase, UpperCamelCase, etc). Using this naming convention adjust the column names so they are short, informative and consistent.
+
+```{r}
+#using colnames to view the given names and change them to underscore separated convention
+colnames(WDI)
+colnames(WDI) <- c("year", "region", "inc_grp", "coun_code", "country", "at_freight", 
+                  "at_pass_carried", "at_carrier_dep", "CPT", "LSCI", "pp_diesel",
+                  "pp_gasoline", "rail_lines", "rail_goods_trans", "rail_pass_carried")
+```
+
+3.  Convert all blank values to missing.
+
+```{r}
+#converting all blank values to NA
+WDI[WDI == ""] <- NA
+```
+
+4.  Convert Year, Region, Income Group, Country Code and Country Name to factors. Do this program- matically rather than one variable at at time.
+
+```{r}
+#converting required variables to factors using lapply and as.factor
+
+WDI[, c("year", "region", "inc_grp", "coun_code", "country")] <- lapply(
+  WDI[, c("year", "region", "inc_grp", "coun_code", "country")], as.factor
+)
+```
+
+5.  Use summary to explore your WDI data. Do you notice a difference in the summaries of factor variables versus character variables?
+
+```{r}
+#use of summary to explore WDI
+summary(WDI)
+```
+
+Yes, the summary of the previously defined factor variables gives us distinct levels with their respective frequencies. But if these variables were still character, the summary would give length, class and mode of the character variables.
+
+6.  Programmatically create a vector named numvar of the names of each of the numeric variables. Be sure that you write code to identify the numeric variables, rather than just listing them.
+
+```{r}
+#using sapply with function is.numeric to identify numeric variables
+num_cols <- sapply(WDI, is.numeric)
+#creating the numvar vector which also assigns same column name as WDI
+numvar <- names(WDI)[num_cols]
+numvar
+```
+
+##data.table and \*apply
+
+1.  If you haven't done so already, convert the WDI_Transport data into a data.table object.
+
+```{r}
+WDI <- setDT(WDI)
+```
+
+2.  Create a descriptive statistics table for your numeric variables using data.table which includes: mean, variance, standard deviation, and the 5th and 95th percentiles. Use either sapply or lapply, but be sure your table can stand-alone with appropriate labels of statistics and variables.
+
+```{r}
+keep <- c("at_freight", "at_pass_carried", "at_carrier_dep", "CPT", "LSCI",
+                        "pp_diesel", "pp_gasoline", "rail_lines",
+                         "rail_goods_trans", "rail_pass_carried")
+WDI[, .(numeric_var = keep,
+        mean = sapply(.SD, mean, na.rm = TRUE),
+        variance = sapply(.SD, var, na.rm = TRUE),
+        sd = sapply(.SD, sd, na.rm = TRUE),
+        percentile_5th = sapply(.SD, function(x) quantile(x, probs = 0.05, na.rm = TRUE)),
+        percentile_95th = sapply(.SD, function(x) quantile(x, probs = 0.95, na.rm = TRUE))),
+    .SDcols = keep
+]        
+```
+
+##dplyr
+
+1.  If you haven't done so already, convert the WDI_Transport data into a tibble object.
+
+```{r}
+library(dplyr)
+WDI2<- as_tibble(WDI)
+```
+
+2.  Create the same descriptive statistics table as above using dplyr. Be sure your table can stand-alone with appropriate labels of statistics and variables.
+
+```{r}
+#creating a function to generate required descriptive stats
+fun <- function(x) {
+  c(
+    mean = mean(x, na.rm = TRUE),
+    variance = var(x, na.rm = TRUE),
+    sd = sd(x, na.rm = TRUE),
+    percentile_5th = quantile(x, 0.05, na.rm = TRUE),
+    percentile_95th = quantile(x, 0.95, na.rm = TRUE)
+  )
+}
+#using the function to create required stats and printing it
+des_stats <- WDI2 %>% 
+  reframe(across(where(is.numeric), fun))
+  names <- c("Mean", "Variance", "SD", "percentile_5th", "percentile_95th")
+  des_stats <- cbind(names, des_stats)
+print(des_stats)
+```
+
+###Question 5: Heteroskedasticity-Robust Standard Errors
+
+As mentioned in class, R's summary.lm( ) function prints standard errors that assume homoskedasticity (just like Stata, SAS, and SPSS). The goal of this problem is to write a function that prints out the same things as summary.lm( ), but uses heteroskedasticity-corrected standard errors.
+
+1.  Make some fake data so that you can make a regression object (reg, for example) and then make regsum \<- summary(reg).
+
+```{r}
+#generate fake data
+set.seed(123)
+x <- sin(1:100)
+y <- 1 + x + rnorm(100)
+
+#run regression on y and x, and set summary of the regression as regsum
+reg <- lm(y~x)
+summary(reg)
+regsum <- summary(reg)
+```
+
+2.  Examine regsum to figure out which things need to be changed. In other words, figure out where they put the standard errors. This involves looking at the class of elements of regsum (a list) and then printing the likely candidates.
+
+```{r}
+sapply(regsum, class)
+regsum[regsum$Coefficients[,2]]
+```
+
+3.  Now start writing your function. For simplicity, let's all call it ols(). Its arguments will be a regression object and a type specification for sandwich::vcovHC. The type argument should have a default value (see the help page for vcovHC).
+
+```{r}
+??vcovHC
+```
+
+4.  Inside the function you'll create a regression summary object. Then you'll make standard errors, as you saw in class. Be sure that you pass the type argument to sandwich::vcovHC. Then you'll need to do some additional calculations because some of the output is calculated from standard errors.
+
+5.  Finally, replace the things that need to be replaced with heteroskedasticty-robust versions and return the modified summary object.
+
+```{r}
+ols <- function(reg_object, type = "HC3") {
+  regression_summary <- summary(reg_object)
+  #firstly calculating the robust standard errors
+  robust_se <- sqrt(diag(sandwich::vcovHC(reg_object, type = type)))
+  # now we work on t and p values which will change based on our robust se
+  coefficients <- regression_summary$coefficients[, 1]
+  #using t value formula w.r.t to robust se
+  t_value <- coefficients/robust_se
+  df <- regression_summary$df[2]
+  #using pt and making it two-tailed, abs here ensured p-value is less than 1 
+  p_value = 2 * pt(-abs(t_value), df)
+  regression_summary$coefficients[, 2] <- robust_se
+  regression_summary$coefficients[, 3] <- t_value
+  regression_summary$coefficients[, 4] <- p_value
+  return(regression_summary)
+}
+
+# using same fake data as above
+set.seed(123)
+x <- sin(1:100)
+y <- 1 + x + rnorm(100)
+
+# fitting it into a regression model
+reg <- lm(y ~ x)
+```
+
+6.  Finally, finally check that it works.
+
+```{r}
+robust_summary <- ols(reg)
+print(robust_summary)
+#As we can see after adjusting for heteroskedasticity-corrected standard errors we get different standard errors, t-test and p-value result for the same regression data.
+```

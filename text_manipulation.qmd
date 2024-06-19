@@ -1,0 +1,308 @@
+---
+title: "Assignment_3_draft"
+format: html
+editor: visual
+---
+
+#Question 1: WDI Data Cleaning
+
+##Re-create the WDI_Transport.csv data set. You will need to clean, reshape and merge the data to complete this task. Be sure to programmatically verify that your cleaned data matches the WDI_Transport.csv data. Some hints can be found by exploring the WDI_Transport data.
+
+###Answer: Let us first explore the WDI_transport data by using structure and table command. It looks like to recreate it we need country and year wise data on ten different transport indicators along with some more details on these countries.
+
+```{r}
+library(rio)
+WDI_Transport <- import("../data/WDI_Transport.csv") 
+str(WDI_Transport)
+```
+
+```{r}
+table(WDI_Transport$Region)
+```
+
+```{r}
+table(WDI_Transport$`Income Group`)
+```
+
+###Now import the three dataset to be used for creating WDI_transport data. Set all of them as data.table and use header = TRUE to ensure the column names also get imported.
+
+```{r}
+WDI_Country <-  import("../data/WDICountry.csv", setclass = "data.table", header = TRUE) 
+WDI_Data <-  import("../data/WDIData.csv", setclass = "data.table", header = TRUE) 
+WDI_Series <-  import("../data/WDISeries.csv", setclass = "data.table", header = TRUE) 
+```
+
+###Now explore these three data sets to understand which elements of WDI_Transport each of them consist.
+
+```{r}
+str(WDI_Data)
+str(WDI_Country)
+str(WDI_Series)
+```
+
+###Looking at the basic structures of these data sets, WDI_Data contains yearly data on 2956 different indicators in "indicator name" column for each countries whose general information has been given in WDI_Country data set. And WDI_Series seems to have detailed info needed to identify these indicators. Do note that we only need ten of these indicators to recreate our WDI_TRansport data set.
+
+###In order to recreate the WDI_Transport data set: i) First, we will subset the WDI_Data to keep only ten of these 2956 indicators that we need. ii) Reshape the WDI_Data using melt to convert the year variable from wide to long. iii) Use decast to convert the selected ten indicators from long to wide (as it is in our WDI_Transport). iv) Then, move on to the WDI_Country data set which is also subset to keep only the three variables that we need. v) Merge the WDI_Data with WDI_Country based on Country Code. vi) Sort the rows based on year, region and income group variables. vii) Remove rows which lack data on region and income group columns.
+
+###Note: While doing all these we also check for tidyness of all these data set and correct for them (if needed).
+
+```{r}
+
+library("data.table")
+
+#Looking at WDI_Series create a list of the ten indicator variable and name them indicator_grp
+
+indicator_grp <- c("Air transport, freight (million ton-km)", "Air transport, passengers carried",
+                   "Air transport, registered carrier departures worldwide", "Container port traffic (TEU: 20 foot equivalent units)",
+                   "Liner shipping connectivity index (maximum value in 2004 = 100)", "Pump price for diesel fuel (US$ per liter)", 
+                   "Pump price for gasoline (US$ per liter)", "Rail lines (total route-km)",
+                   "Railways, goods transported (million ton-km)", "Railways, passengers carried (million passenger-km)")
+
+#Subset the WDI_Data to include only these ten indicators and name it WDI_filtered
+
+WDI_filtered <- WDI_Data[WDI_Data$"Indicator Name" %in% indicator_grp, ]
+```
+
+```{r}
+#reshape the year variable from wide to long and name it melted_data
+
+id.vars <- c("Country Name","Country Code", "Indicator Name", "Indicator Code", "V68")
+melted_data <- melt(WDI_filtered, id.vars = id.vars, variable.name = "year")
+```
+
+```{r}
+#do a typical tidyness check to look for any duplicated or unwanted data
+dim(melted_data)
+length(unique(melted_data$`Country Name`))
+length(unique(melted_data$year))
+length(unique(melted_data$`Country Code`))
+melted_data$Year[duplicated(melted_data$Year)]
+#however, we do not see anything that needs to be corrected for.
+```
+
+```{r}
+#reshape the melted_data to convert the ten selected indicators from long to wide and name it wide_data
+
+wide_data <- dcast(melted_data, `Country Name` + `Country Code` + year ~ `Indicator Name`, value.var = "value")
+```
+
+###wide_data is the final cleaned form of WDI_Data and is ready to be merged with WDI_Country. But before that clean the WDI_Country to make the analysis easy.
+
+```{r}
+#subset WDI_Country into WDI_Country2 by keeping only the required variables
+
+WDI_Country2<- WDI_Country[, .(`Country Code`, Region, `Income Group`)]
+
+```
+
+###Now, we merge wide_data (cleaned WDI_Data) with WDICountry2 (cleaned WDI_Country).
+
+```{r}
+#use merge command setting all.x to TRUE and name the merfed data set as WDI
+
+WDI <- merge(wide_data, WDI_Country2, by = "Country Code", all.x = TRUE)
+```
+
+```{r}
+#set order in the merged dataset (WDI) so as to make it in same format as WDI_Transport
+
+WDI<- WDI[order(WDI$year, WDI$Region, WDI$`Income Group`),]
+WDI <- setcolorder(WDI, c("year", "Region", "Income Group", "Country Code", "Country Name"))
+```
+
+```{r}
+#remove empty rows in region and income group columns
+
+WDI[WDI==""]<-NA
+WDI<-WDI[complete.cases(WDI$Region),]
+```
+
+###The generated WDI dataset is exactly equivalent to WDI_Transport dataset which can be verified by looking at its structure.
+
+```{r}
+str(WDI)
+```
+
+#Question 2:
+
+##For this question you will need to use the olympic_medalists.csv and olympic_medal_prizes.csv data sets. Drawing on the cleaning, reshaping, and merging tools you've learned, I want you to use these two data sets to answer the following questions: Olympians typically receive monetary rewards from their countries for winning a place on the podium.
+
+```{r}
+#importing the required data sets
+library(rio)
+
+Olympic_prizes <-  import("../data/olympic_medal_prizes.csv", setclass = "data.table", header = TRUE) 
+Olympic_medalists <-  import("../data/olympic_medalists.csv", setclass = "data.table", header = TRUE)
+```
+
+```{r}
+#summary of the datasets
+summary(Olympic_medalists)
+summary(Olympic_prizes)
+```
+
+###Simple summary stats reveals that only 34 of the 93 participating countries allocated prizes for their olympic athletes, which means while doing below calculations we will have complete data only on athletes of 34 countries.
+
+```{r}
+#tidying up the data sets and looking for any duplications
+
+dim(Olympic_medalists)
+dim(Olympic_prizes)
+length(unique(Olympic_medalists$Country))
+Olympic_medalists[duplicated(Olympic_medalists),]
+length(unique(Olympic_prizes$Country))
+Olympic_prizes[duplicated(Olympic_prizes),]
+
+#seeing if the total medal earned equal the sum of individual medal
+
+flag <- Olympic_medalists[Olympic_medalists$Gold + Olympic_medalists$Silver + Olympic_medalists$bronze != Olympic_medalists$total,]$Country
+Olympic_medalists[Olympic_medalists$country %in% flag,]
+
+#correcting for name of Russia
+Olympic_medalists[Country == "ROC", Country:= "Russia"]
+```
+
+###Now, we proceed into merging the two data sets while keeping all.y =TRUE. We use a flag to ensure that none of the countries awarding money to their athletes have empty observations in medal rows. If we see any flag, it will either be because of naming inconsistency among these two datasets or may be in a very rare case a country did announce olympic prize but their athletes failed to win any medals.
+
+```{r}
+merged_data <- merge(Olympic_medalists, Olympic_prizes, by = "Country", all.y = TRUE)
+flag <- merged_data[is.na(merged_data$Total) ,]$Country
+merged_data[merged_data$Country %in% flag,]
+```
+
+```{r}
+#In this chunk I use setdiff() and unique() function to find countries whose name may be mismatched in the two different data sets. This does exactly what I did in above chunk but in much efficient way. I leearned this from code review.
+
+unique_prize <- setdiff(Olympic_prizes$Country, Olympic_medalists$Country)
+unique_prize
+
+```
+
+###Our flag gives us six observations which we failed to merge. Looking at the flag, we realize four of these countries have alias name in the other data sets which we correct for below. Then, for the case of Singapore and Lichtenstein we do a Google search to confirm if that they did not win any medal on Tokyo Olympics.
+
+```{r}
+#correct for the name of the four countries
+
+Olympic_medalists[, Country := ifelse(Country == "Hong Kong, China", "Hong Kong", Country)]
+Olympic_medalists[, Country := ifelse(Country == "Chinese Taipei", "Taiwan (Chinese Taipei)", Country)]
+Olympic_medalists[, Country := ifelse(Country == "Republic of Korea", "Korea", Country)]
+Olympic_medalists[, Country := ifelse(Country == "United States of America", "United States", Country)]
+```
+
+###Now, we do a final merge between our corrected data sets and name it merged data 2.
+
+```{r}
+#merging corrected data sets
+
+merged_data2 <- merge(Olympic_medalists, Olympic_prizes, by = "Country", all = TRUE)
+
+#creating a new column named total_money that multiplies no of medals with money value to sum up into total money awarded
+
+merged_data2[, `:=` (total_money = (merged_data2$Gold.x*merged_data2$Gold.y) +       
+                                   (merged_data2$Silver.x*merged_data2$Silver.y)+            
+                                   (merged_data2$Bronze.x*merged_data2$Bronze.y))]    
+
+```
+
+##1. How much money in total did Olympic athletes take home from the Tokyo Olympics 2021 for their medals?
+
+```{r}
+#sum up the toal money column to find total money athletes took home for their medals
+
+sum <- sum(merged_data2$total_money, na.rm = TRUE)
+print(sum)
+```
+
+###Hence, from Tokyo Olympics 2021 athletes took home a total sum of 30191502 as award money.
+
+##2. Which 10 countries paid the most to their athletes?
+
+```{r}
+#sort the merged_data2 based on descending order of total money and print the top 10 values
+
+top_10_countries <- merged_data2[order(-total_money)][1:10]
+print(top_10_countries)
+```
+
+#Question 3: Text Manipulation Practice
+
+##1. In x \<- c("123password", "password123", "pass123word", "123", "password", "p\@\$\$Wo4D!") use grep to select the passwords that. . . 1. start with "pass"; 2. have digits (don't assume 1, 2, or 3); and 3. does not end with an alphanumaric character.
+
+```{r}
+
+x <- c("123password", "password123", "pass123word", "123", "password", "p@$$Wo4D!")
+
+#starts with "pass"
+x[grep("^pass", x)]
+
+#have digits (don’t assume 1, 2, or 3)
+x[grep("[[:digit:]]", x)]
+
+# does not end with an alphanumaric character
+x[grep("[[:punct:]]$", x)]
+```
+
+##2. Convert "a9a9a9a9" to "aaaa".
+
+```{r}
+x <- "a9a9a9a9"
+gsub("\\d", "", x)
+```
+
+##3. Convert "a.a.a.a" to "aaaa".
+
+```{r}
+x <- "a.a.a.a"
+gsub("\\.", "", x)
+```
+
+##4. Change "a.a.a.a" to "bbbb" with a single regex command.
+
+```{r}
+x <- "a.a.a.a"
+gsub("a.|a", "b", x)
+```
+
+##5. Convert c("state_27","state:36","birthstate-79")toc("state.27", "state.36", "birthstate.79") using a regex set.
+
+```{r}
+x <- c("state_27", "state:36", "birthstate-79")
+gsub("[_:-]", ".", x)
+```
+
+#Question 4
+
+##1. Find the contamination and make a list. Of course, it wouldn't be any fun if I told you what they are, but I will say that there are 32 different ones (each occurs many times). A couple of them are extra tricky, so don't stress if you can only find 30 in a reasonable amount of time. You'll need grep, of course, but if you proceed the way I did, you'll also need the following (these are hints).
+
+```{r}
+#loading up the d datatable
+library(rio)
+d <- import("../data/dirtyData.rdata", header = TRUE, setclass = "data.table")
+```
+
+###Now, I unlist the d data table, then define what a contamination should look like and identify the non-numeric observations in the d list.
+
+```{r}
+#unlist d as d2
+d2 <- unlist(d)
+
+#Find non-numeric contaminations in d2 using grepl and list them as d3
+d3 <- d2[!grepl("^-?\\d+\\.?\\d*$", d2)] # !"ˆ-?[[:digit:]]+$" identifies all non-charcater vectors
+
+#print the unique values of d3 to see what kind of contaminations our pattern gives us
+unique(d3)
+```
+
+###However, we see values like "-4e-04", "5e-04", "-2e-04" also being listed as non-numeric contamination based on our given pattern which needs to be corrected. Hence, below we remove these characters from our list of non-numeric contamination.
+
+```{r}
+#remove positive/negative exponential values form d3
+d4 <- d3[!grepl("^-?\\d+\\.?\\d*e-\\d+$", d3)]
+
+#Now, finally when we print the unique values of d4 we will get all 32 unique contaminations
+(non_numeric_contaminations <- unique(d4))
+```
+
+##2. Briefly discuss which of the non-number items you found could be valid (numeric) data.
+
+###Answer: We found 32 unique contaminations among which some may be a valid (numeric) data that mistakely ended up with a few non-numeric character like "\$", ".", " ","," , "%" , "a", or others. We list them below: a) Contamination like "a123456" - alphabets mixed with number b) Contamination like "20%" - numbers ending in % sign which is equivalent to 0.2 c) Contamination like "2. 034" - empty spaces after number d) Contamination like " -8,038 " - possibly a "," in place of "." e) Contamination like "$5" - numbers starting with "$" f) Contamination like "1.41$" - numbers ending with "$" g) Contamination like "2.03." - numbers ending with "." h) Contamination like "4,56" - possibly a "," in place of "."

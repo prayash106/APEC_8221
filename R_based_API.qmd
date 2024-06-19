@@ -1,0 +1,548 @@
+---
+title: "Assign4"
+author: "Prayash Pathak"
+format: html
+editor: visual
+---
+
+```{r}
+#load all the required libraries
+install.packages('WDI')
+install.packages('jtools')
+install.packages('huxtable')
+library(rio)
+library(data.table)
+library(ggplot2)
+library(WDI)
+library(jtools)
+library(jsonlite)
+library(lmtest)
+library(sandwich)
+library(huxtable)
+library(tmap)
+library(spData)
+library(sf)
+library(httr)
+library(rvest)
+```
+
+## Part I: APIs, Plots, Tables & Maps
+
+Question 1: Plot Function 1. Write a function that creates a bubble plot from two main variables of interest using the ggplot2 package. Your plot should have the following characteristics: a. The points have the option of being colored by a categorical variable (e.g., region or income). b. The points have the option of being sized by a continuous variable. Set the default to population. c. The x or y variables of interest have the option of being logarithmic transformed. d. The data has the option of being faceted by a time-based variable. e. The plot is self-explanatory (i.e., plain English, descriptive titles, clearly formatted, appropriate colors).
+
+```{r}
+#function named create_bubble to create bubble plot that returns g
+
+create_bubble<- function(data, variable_x, variable_y, variable_color = NULL, 
+                             variable_size = "population", var_x_log = FALSE, 
+                             var_y_log = FALSE, facet_variable = NULL) {
+ ## to account for the variables being log transformed we check it here
+  if (var_y_log) {
+    data[, variable_y := log(variable_y)]
+  }
+  if (var_x_log) {
+      data[, variable_x := log(variable_x)]
+  }
+  
+  ## Create the plot and name it g, which will be used to add more layers
+  g <- ggplot(data, aes(x = {{variable_x}}, y = {{variable_y}}, size = {{variable_size}}))
+  
+  if (!is.null(variable_color)) {
+    g <- g + aes(color = {{variable_color}})
+  }
+  
+  g <- g +
+    geom_point(shape = 20, alpha = 0.7) + 
+    scale_size_continuous("Population") +
+    labs(
+      title = "Bubble Plot",
+      
+     x = ifelse(var_x_log, paste(deparse(substitute(variable_x)), 
+                              "(log scale)", sep = ""), 
+                 deparse(substitute(variable_x))),
+      
+      y = ifelse(var_y_log, paste(deparse(substitute(variable_y)), 
+                              "(log scale)", sep = ""), 
+                 deparse(substitute(variable_y))),
+    caption = "Source: Test Data"
+    )+
+    theme_minimal()
+  
+  # To facet by time variable
+  if (!is.null(facet_variable)) {
+    time <- max(data[[facet_variable]], na.rm = TRUE)
+    g <- g + facet_wrap({{facet_variable}}, strip.position = "right", 
+                        nrow = time, ncol = 1, scales = "free_y")
+  }
+  
+  return(g)
+}
+```
+
+2.  Create a test data set to ensure your function works. For example:
+
+```{r}
+#Create a test data to check above function
+set.seed(123)
+n <- 100
+test_data<- data.table(
+  x = rnorm(n, mean =1000, sd=100),
+  y = runif(n, 0, 10000),
+  category = sample(c("cat1", "cat2", "cat3"), n, replace = TRUE),
+  population = runif(n, min = 0, max = 10000),
+  time = rep(1:2))
+
+create_bubble(test_data, variable_x = test_data$x, variable_y = 
+                        test_data$y, var_x_log = TRUE, var_y_log = FALSE, 
+                        variable_color = test_data$category, 
+                        variable_size = test_data$population, facet_variable = "time")
+
+```
+
+## Question 2: Web-Based API
+
+1.  Use the World Bank's Indicators API to get the full data set of country classifications: ISO codes, country name, regional classification, income level, lending type, capital city, and geographical coordinates. Remember, there are six main steps in pulling data from a web-based API.
+
+a.  Construct your base URL.
+
+```{R}
+url <- "http://api.worldbank.org"
+version<- "v2"
+entity <- "countries?per_page=500&format=json"
+url.base <- paste(url, version, entity, sep = "/")
+```
+
+b.  Construct your request parameter string, which includes any relevant queries or filters. \[Hint: you want your API request to return its response in JSON format.\]
+
+```{R}
+#for this question I was stuck in this section so I took some help from Tianhao.
+parameter <- list(inlinecount = "allpages")
+parameter.string <- paste0("&", names(parameter), parameter)
+```
+
+c.  Construct your full argument-based query. \[Note: the Indicators API supports two ways to build queries -- URL-based and argument-based. The workflow you were taught in class centers on what they are calling "Argument-Based" queries.\]
+
+```{R}
+final.url <- paste(url.base, parameter.string, sep = "")
+```
+d.  Send your query to the endpoint using httr::GET().
+
+```{R}
+response <- httr::GET(url = final.url)
+```
+
+e.  Convert the resulting output from JSON to an R-based object (in this case a list) using jsonlite::fromJSON().
+
+```{R}
+WDI <- fromJSON(rawToChar(response$content))
+```
+
+f.  Extract the data from the list object. You will need to write a while() loop to retrieve all of the records iteratively. Read the provided API Basic Call Structures document for advice on setting up your Argument-based query.
+
+```{R}
+#now we extract the second item of the WDI list which is our required dataset
+WDI1<- WDI[[2]]
+```
+2.  Tidy up your country classification data.
+
+```{=html}
+<!-- -->
+```
+a.  Remove the regional aggregates from your data so that your object only contains country-level information.
+
+```{R}
+WDI2<- WDI1[WDI1$lendingType$value != "Aggregates", ] 
+```
+
+b.  Select the following variables: id, iso2Code, name, region.value, incomeLevel.value, longitude, latitude.
+c.  Rename your variables as you see fit.
+
+```{r}
+#Rename some of the variables to easier format
+WDI2$inc_lvl <- WDI2$incomeLevel$value 
+WDI2$region <- WDI2$region$value 
+
+#Create a subset of required variables form  WDI2
+WDI3 <- subset(WDI2, select = c("id", "iso2Code", "name", "region", "inc_lvl",                                            "longitude", "latitude"))
+```
+
+##Question 3: R-Based API The WDI R package allows users to search and download data directly into R from over 40 data sets hosted by the World Bank, including the World Development Indicators ('WDI'), International Debt Statistics, Doing Business, Human Capital Index, and Sub-national Poverty indicators. 1. Write a function that uses the WDI package to retrieve three indicators of interest: two user defined variables and total population. Your function arguments should (minimally) include: a. A character vector of indicator codes. \[If you supply a named vector, the indicators will be automatically renamed: c('women_private_sector' = 'BI.PWK.PRVS.FE.ZS').\] b. A start and end date for the time frame of interest.
+
+```{r}
+#function named indicators_retrieve
+indicators_retrieve <- function(indicator_codes, start_date, end_date) {
+    country_code <- "all"                      
+    indicator_codes <- c("SP.POP.TOTL", indicator_codes) #SP.POP.TOTL is indicator code for total pop
+    # data1 is an empty dataset to store data
+    data1 <- data.frame()
+    
+ for (i in 1:length(indicator_codes)) {
+      i_code <- indicator_codes[i]
+      user <- WDIsearch(string = i_code, field = 'indicator')
+      u_code <- user[1 , 2]
+  
+    d1 <- WDI(country = "all", indicator = i_code, 
+                     start = start_date, end = end_date)
+    
+    names(d1)[names(d1) == i_code] <- u_code
+   
+    if(i == 1){
+      d2 <- d1
+    }
+    if(i > 1){
+      d2 <- merge(d2, d1, by = c("year", "country", 
+                                                    "iso2c", "iso3c"), all = FALSE)
+    }
+}
+  
+  return(d2)
+}
+```
+
+2.  Use the WDIsearch() function to identify indicator codes for the following three indicators:
+a.  GDP per capita in current US\$.
+
+```{r}
+WDIsearch('gdp.*capita.*constant')
+#among the list below we should choose the code just for GDP per capita (contant 2015 US$)
+```
+
+b.  Life expectancy at birth for total population.
+
+```{r}
+WDIsearch('Life expectancy at birth, total')
+```
+
+c.  Total population size. WDIsearch() uses regex commands to search the indicator list. Include your final regex commands in your assignment. Aim to have these commands be as short as possible to get at the desired information.
+
+```{r}
+WDIsearch('Population, total')
+```
+
+3.  Use your function to download the GDP per capita, life expectancy and population data from 1970 through 2020.
+
+```{r}
+#using the indicators_retrieve function from above
+indicators_code <- c("NY.GDP.PCAP.CD", "SP.DYN.LE00.IN", "SP.POP.TOTL")
+start_date <- "1970"
+end_date <- "2020"
+retrieved_data <- indicators_retrieve(indicators_code, start_date, end_date)
+
+#it will be easier to change some of the column names
+retrieved_data <- retrieved_data[,1:7]
+colnames(retrieved_data) <- c("year", "country", "iso2c", "iso3c", "total_pop", 
+                              "GDP", "life_expectancy")
+```
+
+4.  Merge your indicator data subset with the country classifications extracted in Question 2.
+
+```{r}
+#merge together retrieved_data and WDI3
+#but before doing that need to make column names same
+colnames(WDI3) <- c("iso3c", "iso2c", "country", "region", "inc_lvl", "longitude", "latitude")
+merged_data <- merge(WDI3, retrieved_data, by= c("country", "iso2c", "iso3c"))
+```
+
+5.  Create a new variable that indicates which decade the observation is in. For example, years 1970-1979 would be considered part of the 1970 decade. Try to do this mathematically rather than just listing out the years.
+
+```{r}
+#Previously I was not able to do this in data.table format, after looking at the code reviews I realized the "merged_data" was not in data.table format, now I changed it in data.table format and generated the decade variable in data.table format.
+
+class(merged_data)
+setDT(merged_data)
+merged_data[, decade := floor(year/10)*10]
+```
+
+6.  Calculate the average GDP per capita, life expectancy and population by decade for each country. Be sure to retain your country classification variables in the aggregate data set.
+
+```{r}
+#the calculated data table is named as decade averages
+decade_averages <- merged_data[, lapply(.SD, mean, na.rm = TRUE), 
+                     by = .(country, decade, region, iso2c), 
+                     .SDcols = c("GDP","total_pop","life_expectancy")]
+```
+
+##Question 4: WDI Plots 1. Mimic Hans Rosling's World Health Chart by using your bubble chart function from Question 1 to plot average log GDP per capita against average life expectancy from 1970 - 2020. a. Color the points by region. b. Size the points by population. c. Facet the points by decade.
+
+```{r}
+# use create_bubble function from question (1)
+decade_averages$facet <- (decade_averages$decade-1960)/10
+create_bubble(decade_averages, variable_x = decade_averages$`GDP`, 
+                variable_y = decade_averages$`life_expectancy`,
+                var_x_log = TRUE, var_y_log = FALSE, variable_color = decade_averages$region,
+                variable_size = decade_averages$`total_pop`, facet_variable = "facet")
+
+```
+
+##Question 5: WDI Tables 1. Using the data extracted in Question 3, run a regression of log GDP per capita on life expectancy at birth in 2020.
+
+```{r}
+setDT(retrieved_data)
+model <- lm(life_expectancy~log(GDP) , data = retrieved_data[year == 2020, ])
+```
+
+2.  Create a well-formatted table with the regression results.
+
+```{r}
+#use huxreg command to create a relatively nicer looking table
+reg <- huxreg("Life expectancy" = model, coefs =c("Log GDP per capita" = "log(GDP)"), 
+        statistics = c("N. obs." = "nobs", "R squared" = "r.squared", 
+                      "F statistic" = "statistic", "P value" = "p.value"),  
+       stars = c(`*` = 0.1, `**` = 0.05, `***` = 0.01), 
+       number_format = 2)
+reg
+```
+
+3.  Adjust for robust standard errors and create a regression table with corrected standard errors. \[Note: unfortunately, the lm package does not have a convenient option for using robust standard errors as you can do in Stata. However, there are options that exist for programmatically creating tables that include corrected standard errors. See these two vignettes for reference: lmtest::coeftest and jtools::export_summs.\]
+
+```{r}
+library(lmtest)
+library(jtools)
+library(sandwich)
+library(huxtable)
+#robust standard error type HC1
+robust_SE <- coeftest(model, vcov = vcovHC(model), type = "HC2")
+export_summs(model, robust_SE, 
+            model.names = c("OLS", "OLS with 
+            HC1 corrected SE"))
+```
+
+##Question 6: WDI Maps 1. To map the WDI data, you'll need to merge it with a boundary file. For this assignment, you'll use the spData::world sf object. Go ahead and remove the pop, lifeExp, and gdpPercap variables from this multi-polygon object; we want to use the data on these indicators from our World Bank extraction instead.
+
+```{r}
+#load the world data as d1, which is then sub-setted to include only interested variables
+d1 <- spData::world
+setDT(d1)
+d1 <- d1[, c("pop", "lifeExp", "gdpPercap") := NULL]
+
+```
+
+2.  Merge your world boundary files with your average GDP per capita, life expectancy and population by decade for each country from Question 3. Note that when merging an sf file with a data.frame object, the sf must always be listed first in the x argument slot. Only keep data relevant to world.
+
+```{r}
+#the decades_averages dataset from question (3)  is first chnaged to d2 to include only relevant variables
+d2 <- decade_averages[, .(country, decade, iso2c, `GDP`, `total_pop`, `life_expectancy`)]
+
+#now we merge d1 and d2 to get d2
+d3 <- merge(d1, d2, by.x = "iso_a2", by.y = "iso2c")
+```
+
+3.  Subset your data to only include one continent -- Africa.
+
+```{r}
+#d4 is a subset of d3 with only Africa
+d4 <- d3[continent=="Africa"]
+```
+
+4.  Create two map objects with tmap to examine the trends in (1) life expectancy in Africa and (2) total population in Africa. Your maps should have the following characteristics:
+
+```{=html}
+<!-- -->
+```
+a.  Faceted by decade and displayed in a single row.
+b.  Logical labels.
+c.  Appropriate color breaks (i.e., the style argument).
+
+```{r}
+# first set d4 as a shape file
+d4_sf <- st_as_sf(d4)
+
+# now we make the first map of life expectancy
+map1 <- tm_shape(d4_sf) +
+  tm_borders() + 
+  tm_fill(col = "life_expectancy", style = "quantile", 
+          title = "Life Expectancy in Africa") +
+  tm_facets(by = "decade", ncol = 3) +
+  tm_style("classic")
+
+map1
+
+# second map of total population
+map2 <- tm_shape(d4_sf) +
+  tm_borders() + 
+  tm_fill(col = "total_pop", style = "quantile", 
+          title = "Total Population") +
+  tm_facets(by = "decade", ncol = 3) +
+  tm_style("classic")
+
+map2
+
+```
+
+5.  Finally, arrange your two maps in a single, two row figure.
+
+```{r}
+#arranged map is named final_map
+final_map <- tmap_arrange(map1, map2, nrow=2, ncol=1)
+final_map
+```
+
+##Part II: Web Scraping Question 1: National Park Services The National Parks Service compiles and presents a wealth of statistics by state on each state-level page. For example, look at Minnesota's By the Numbers call-out.
+1. Create a list of url paths for each state.
+a. Use read_html() to create an xml object from the National Park Service homepage. 
+b. Using a multi-criteria search expression of of html tag(s) or css selector(s), extract all of the html nodes that contain anchor tags (<a/>) from the drop down menu of state choices. Note: there are two drop down menus on this webpage, so be sure you're grabbing the correct one. This is what the first six nodes look like:
+
+```{r}
+#url of the homepage
+url <- "https://www.nps.gov/index.htm"
+
+# Read the HTML content of the page
+page <- read_html(url)
+
+#define the CSS selectors
+drop_down_menu <- ".dropdown"
+anchor_tags <- "a" 
+
+#extract modes that macth above selectors
+nodes_dropdn <-  html_nodes(page, drop_down_menu)
+nodes_anchor <- html_nodes(nodes_dropdn, anchor_tags)
+
+#select and print the nodes_anchor
+nodes_anchor <- nodes_anchor [1:56]
+print(head(nodes_anchor))
+```
+
+c.  Create an object containing the [url]{.smallcaps} path and name for each state.
+    i.  Write a function that uses `html_attr` to extract the [href]{.smallcaps} attribute and `html_text` to extract the state name from the anchor tag. Save these variables in a data.frame. Apply this function to each state within your state list object using `lapply`.
+    ii. Convert the resulting list to a data.frame using `do.call()` and `rbind()`.
+
+```{r}
+#function for state
+state_name_func <- function(at) { #at is for anchor tag
+  url_path <- at%>% html_attr("href")
+  state<- at %>% html_text()
+  data.frame(url = url_path, state = gsub("\n", "", state))
+}
+
+# Apply the function to each anchor tag using lapply
+state_data <- lapply(nodes_anchor , state_name_func)
+
+# Converting the list to data.frame
+state_df <- do.call(rbind, state_data)
+
+print(state_df)
+#this gives me 56 states (which is not geographically right, but still makes sense cause the homepage of
+#NPS also has listed some other places as state)
+```
+
+2.  Create a function to extract data from state-level NPS webpage (i.e., pass a state-level NPS website to your function). This function should do the following:
+a.  Use read_html to create a xml object from the state-level NPS website.
+b.  Using a multi-criteria search expression, extract all of the html nodes that contain list tags (<li/>) from the By the Numbers state statistics section. Using html_text, remove any html notation. Example of output from Minnesota webpage: As shown above, you should have single character vector consisting of a long string of text for each entry. Now you need to separate that text into a two variable data frame object consisting of the value and the long-name NPS variable (e.g., "Visitors to National Parks"). Using text manipulation and regular expressions, construct `value` by 'deleting' the information after the first space. Construct `var_long` by 'deleting' the information before the first space. Example of output from Minnesota webpage:
+```{R}
+#fthe required function is named extract_state_data
+extract_state_data <- function(statename) {
+  
+  # for the fist part of 2(a)
+  
+  line <- match(statename, state_df$state)
+  
+  url_1 <- state_df$url[[line]] 
+  
+  url <- paste0("http://nps.gov", url_1, "/index.htm")
+  
+  final_url <- read_html(url)
+  
+  # for the second part of 2(b)
+  
+  css <- "#cs_control_4083830 .state_numbers"
+  
+  list_txt <- html_text(html_element(final_url, css = css))
+
+  # Cleaning to remove HTML notation
+  rm_HTML <- gsub("<[^>]+>", "", list_txt)
+  
+  rm_HTML <- gsub("([^0-9$]) ([0-9$])", "\\1\n\\2", rm_HTML)
+
+  rm_HTML <- gsub("since\n", "since ", rm_HTML)
+  
+  rm_HTML <- gsub("Print the summary »", "", rm_HTML)
+  
+  rm_HTML <- gsub(" »", "", rm_HTML)
+  
+  return(rm_HTML)
+}
+
+# Example usage for Minnesota
+MN <- extract_state_data("Minnesota")
+MN
+```
+c.  Now clean up your new variables
+    i.  Set value as numeric and remove any \$ or , symbols.
+    ii. Remove any punctuation (which includes guillemet quote ») and trailing or leading whitespace from var_long. Example of output from Minnesota webpage: Certified Local Governments Community Conservation Recreation Projects since 1987 Extract data for each state and create a master data frame.
+
+```{r}
+#unlist the MN data
+MN1 <- unlist(strsplit(MN, "\n"))
+
+#divide this unlisted MN1 into values and var_long
+#here I use a lapply to the unlisted MN1 with a function named MN2 that divides MN1 to create
+#a data frame with value and var_long, all of this is named as MN3
+MN3 <- lapply(MN1, function(MN2) {
+  parts <- strsplit(MN2, " ", fixed = TRUE)[[1]]
+  value <- parts[1]
+  var_long <- paste(parts[-1], collapse = " ")
+  data.frame(value = value, var_long = var_long)
+})
+
+#convert MN3 into single data frame
+MN4 <- do.call(rbind, MN3)
+MN4
+
+#now we clean the values of the MN4 dataframe 
+MN4$value <- as.numeric(gsub("[^[:alnum:]]", "", MN4$value))
+```
+
+3.Extract data for each state and create a master data frame
+a.  Set your base url to "https://www.nps.gov".
+
+b.  Looping over each observation in your state path data from part 1 above,
+
+i.  Build a state-specific absolute url by concatenating your base url and state url path.
+
+ii. Extract state-level NPS variables and their values using your function from part 2 above.
+iii. Change the name of value to the state name.
+iv. Merge by var_long variable. Be sure to keep all observations since not every statistic is reported by every state.
+v.  It is recommended that you print a message inside your loop to know that it is working properly, as well as add a sleep command to not overwhelm the NPS server.
+
+```{R}
+#the to be created master data frame for all states is named as master_df
+master_df <- data.frame()
+
+for (i in 1:56){
+  #first we repeat the same steps as above 
+  name_of_state <- state_df$state[[i]]
+  state_data <- extract_state_data(name_of_state)
+  
+  #above we had MN1---MN4 as we were trying to first work with Minnesota data, now we just 
+  #replace MN1---M4 with s1---s4 as a general representation for all states
+  
+  s1 <- unlist(strsplit(state_data, "\n"))
+  data <- lapply(s1, function(s2) {
+    parts <- strsplit(s2, " ", fixed = TRUE)[[1]]
+    value <- parts[1]
+    var_long <- paste(parts[-1], collapse = " ")
+    data.frame(value = value, var_long = var_long)
+  })
+  s4 <- do.call(rbind, data)
+  s4$value <- as.numeric(gsub("[^[:alnum:]]", "", s4$value))
+  colnames(s4)[colnames(s4) == "value"] <- name_of_state
+  if (i == 1) {
+    master_df <- s4
+  }
+  
+  if (i > 1) {
+    master_df<- merge(master_df, s4, by = "var_long", all = TRUE)
+  }
+  
+  message("Number of states completed:", i, "among 56 states")
+  Sys.sleep(1)
+  master_df<- subset(master_df, var_long != "")
+}
+
+head(master_df)
+```
+4.  Clean your data -- in theory. Your data isn't quite ready for analysis yet. What remaining issues do you see, and what would be your plan (in words) for addressing these issues?
+
+Ans:For me, I see two issues with the generated master_df:
+a) Address the fact that we have 56 states in our dataframe which may cause issues while plotting or merging this dataset with other datasets.
+b) We see a lot of missing values in our data which should be addressed before using it.
